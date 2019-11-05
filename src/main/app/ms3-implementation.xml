@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    
+    <http:request-config name="HTTPS_Request_Configuration_Identification"  host="${http.sys.host}" port="${http.syside.port}" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="admin" password="admin" preemptive="true"/>
+    </http:request-config>
+    
+       <http:request-config name="HTTPS_Request_Configuration_Address"  host="${http.sys.host}" port="${http.sysade.port}" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="admin" password="admin" preemptive="true"/>
+    </http:request-config>
+    
+       <http:request-config name="HTTPS_Request_Configuration_Communication"  host="${http.sys.host}" port="${http.syscom.port}" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="admin" password="admin" preemptive="true"/>
+    </http:request-config>
+    
+    <flow name="implementationFlow-GET">
+        <logger message="GET Started" level="INFO" doc:name="Logger"/>
+        <expression-component doc:name="Set Error Var"><![CDATA[flowVars.status = "failure"; 
+flowVars.errorCode = "500";
+flowVars.errorType = "Internal Server Error";
+flowVars.errorMessage = "Database Service call failed";]]></expression-component>
+        <enricher target="#[flowVars.IdentificationVar]" doc:name="Message Enricher">
+            <http:request config-ref="HTTPS_Request_Configuration_Identification" path="${http.sys.path}/sys-ide/identification/#[flowVars.contactId]" method="GET" doc:name="Invoke sys Identification API"/>
+        </enricher>
+        <enricher target="#[flowVars.AddressVar]" doc:name="Message Enricher">
+            <http:request config-ref="HTTPS_Request_Configuration_Address" path="${http.sys.path}/sys-add/address/#[flowVars.contactId]" method="GET" doc:name="Invoke Sys Address API"/>
+        </enricher>
+        <http:request config-ref="HTTPS_Request_Configuration_Communication" path="${http.sys.path}/sys-com/communication/#[flowVars.contactId]" method="GET" doc:name="Invoke Sys Communication API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	Identification: flowVars.IdentificationVar[0],
+	Address: flowVars.AddressVar,
+	Communication: payload
+	
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="doc-globalCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+     
+    <flow name="implementationFlow-POST">
+        <logger message="POST Started " level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="2a2f19c2-4fc6-4814-be44-c3f33d0dacac">
+            <dw:input-payload doc:sample="sample_data\json.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json skipNullOn="everywhere"
+---
+{
+	Identification: {
+		FirstName: payload.Identification.FirstName,
+		LastName: payload.Identification.LastName,
+		DOB: payload.Identification.DOB,
+		Gender: payload.Identification.Gender,
+		Title: payload.Identification.Title
+	}
+}]]></dw:set-payload>
+            <dw:set-variable variableName="inputPayload"><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	Identification: {
+		FirstName: payload.Identification.FirstName,
+		LastName: payload.Identification.LastName,
+		DOB: payload.Identification.DOB,
+		Gender: payload.Identification.Gender,
+		Title: payload.Identification.Title
+	},
+	Address: payload.Address map ((address , indexOfAddress) -> {
+		type: address.'type',
+		number: address.number,
+		street: address.street,
+		Unit: address.Unit,
+		City: address.City,
+		State: address.State,
+		zipcode: address.zipcode
+	}),
+	Communication: payload.Communication map ((communication , indexOfCommunication) -> {
+		type: communication.type,
+		value: communication.value,
+		preferred: communication.preferred
+	})
+}]]></dw:set-variable>
+        </dw:transform-message>
+        <expression-component doc:name="Set Error Var"><![CDATA[flowVars.status = "failure"; 
+flowVars.errorCode = "500";
+flowVars.errorType = "Internal Server Error";
+flowVars.errorMessage = "Database Service call failed";]]></expression-component>
+        <http:request config-ref="HTTPS_Request_Configuration_Identification" path="${http.sys.path}/sys-ide/identification" method="POST" doc:name="Invoke Sys Identification API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json skipNullOn="everywhere"
+---
+Address: flowVars.inputPayload.Address map ((address , indexOfAddress) -> {
+		type: address.'type',
+		number: address.number,
+		street: address.street,
+		Unit: address.Unit,
+		City: address.City,
+		State: address.State,
+		zipcode: address.zipcode,
+		identificationId: payload.Id
+	})]]></dw:set-payload>
+            <dw:set-variable variableName="identificationId"><![CDATA[%dw 1.0
+%output application/java
+---
+payload.Id]]></dw:set-variable>
+        </dw:transform-message>
+
+        <http:request config-ref="HTTPS_Request_Configuration_Address" path="${http.sys.path}/sys-add/address" method="POST" doc:name="Invoke Sys Address API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json skipNullOn="everywhere"
+---
+Communication: flowVars.inputPayload.Communication map ((communication , indexOfCommunication) -> {
+		type: communication.type,
+		value: communication.value,
+		preferred: communication.preferred,
+		identificationId : flowVars.identificationId
+	})]]></dw:set-payload>
+        </dw:transform-message>
+
+        <http:request config-ref="HTTPS_Request_Configuration_Communication" path="${http.sys.path}/sys-com/communication" method="POST" doc:name="Invoke Sys Communication API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+  status: "success",
+  Id: flowVars.identificationId
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="doc-globalCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="implementationFlow-PUT">
+        <logger level="INFO" doc:name="Logger" message="PUT Started"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="34e2f85b-e803-4613-94fc-cd3ea1db5d76">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	Identification: {
+		FirstName: payload.Identification.FirstName,
+		LastName: payload.Identification.LastName,
+		DOB: payload.Identification.DOB,
+		Gender: payload.Identification.Gender,
+		Title: payload.Identification.Title
+	}
+}]]></dw:set-payload>
+            <dw:set-variable variableName="inputPayload"><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	Identification: {
+		FirstName: payload.Identification.FirstName,
+		LastName: payload.Identification.LastName,
+		DOB: payload.Identification.DOB,
+		Gender: payload.Identification.Gender,
+		Title: payload.Identification.Title
+	},
+	Address: payload.Address map ((address , indexOfAddress) -> {
+		number: address.number,
+		street: address.street,
+		Unit: address.Unit,
+		City: address.City,
+		State: address.State,
+		zipcode: address.zipcode
+	}),
+	Communication: payload.Communication map ((communication , indexOfCommunication) -> {
+		type: communication.type,
+		value: communication.value,
+		preferred: communication.preferred
+	})
+}]]></dw:set-variable>
+        </dw:transform-message>
+        <expression-component doc:name="Set Error Var"><![CDATA[flowVars.status = "failure"; 
+flowVars.errorCode = "500";
+flowVars.errorType = "Internal Server Error";
+flowVars.errorMessage = "Database Service call failed";]]></expression-component>
+        <http:request config-ref="HTTPS_Request_Configuration_Identification" path="${http.sys.path}/sys-ide/identification/#[flowVars.contactId]" method="PUT" doc:name="Invoke Sys Idetification API"/>
+
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json skipNullOn="everywhere"
+---
+
+ Address : flowVars.inputPayload.Address map ((address , indexOfAddress) -> {
+		number: address.number,
+		street: address.street,
+		Unit: address.Unit,
+		City: address.City,
+		State: address.State,
+		zipcode: address.zipcode
+	})]]></dw:set-payload>
+        </dw:transform-message>
+        <http:request config-ref="HTTPS_Request_Configuration_Address" path="${http.sys.path}/sys-add/address/#[flowVars.contactId]" method="PUT" doc:name="Invoke Sys Address API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json skipNullOn="everywhere"
+---
+Communication: flowVars.inputPayload.Communication map ((communication , indexOfCommunication) -> {
+		type: communication.type,
+		value: communication.value,
+		preferred: communication.preferred
+	})]]></dw:set-payload>
+        </dw:transform-message>
+        <http:request config-ref="HTTPS_Request_Configuration_Communication" path="${http.sys.path}/sys-com/communication/#[flowVars.contactId]" method="PUT" doc:name="Invoke Communication API"/>
+
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	"status" : "updated"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="doc-globalCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="implementationFlow-DELETE">
+        <logger level="INFO" doc:name="Logger" message="DELETE Started"/>
+        <expression-component doc:name="Set Error Var"><![CDATA[flowVars.status = "failure"; 
+flowVars.errorCode = "500";
+flowVars.errorType = "Internal Server Error";
+flowVars.errorMessage = "Database Service call failed";]]></expression-component>
+        <http:request config-ref="HTTPS_Request_Configuration_Identification" path="${http.sys.path}/sys-ide/identification/#[flowVars.contactId]" method="DELETE" doc:name="Invoke Sys Identification API"/>
+        <http:request config-ref="HTTPS_Request_Configuration_Address" path="${http.sys.path}/sys-add/address/#[flowVars.contactId]" method="DELETE" doc:name="Invoke Sys Addess API"/>
+        <http:request config-ref="HTTPS_Request_Configuration_Communication" path="${http.sys.path}/sys-com/communication/#[flowVars.contactId]" method="DELETE" doc:name="Invoke Sys Communication API"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	"status": "success"
+}]]></dw:set-payload>
+        </dw:transform-message>
+
+        <exception-strategy ref="doc-globalCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+</mule>
